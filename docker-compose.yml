@@ -1,0 +1,58 @@
+version: "3"
+services:
+# 1. TCU with attached TPM (via spi-nw)
+#    TCU (connected via eth-nw to ECU_U and ECU_C)
+  tcu:
+    container_name: update-reporting-tcu
+    networks:
+      update-reporting-spi-nw:
+        ipv4_address: 10.0.0.10
+      update-reporting-eth-nw:
+        ipv4_address: 20.0.0.10
+    build:
+      context: ./
+      dockerfile: docker_files/tcu.docker
+    expose:
+      - "5001"
+    depends_on:
+      - swtpm
+
+  swtpm:
+    container_name: update-reporting-swtpm
+    networks:
+      update-reporting-spi-nw:
+        ipv4_address: 10.0.0.20
+    build:
+      context: ./
+      dockerfile: docker_files/swtpm.docker
+    expose:
+      - "2321"
+      - "2322"
+
+# 2. ECU_U (connected via eth-nw to TCU and ECU_C)
+  ecuu:
+    container_name: update-reporting-ecuu
+    networks:
+      update-reporting-eth-nw:
+        ipv4_address: 20.0.0.20
+    build:
+      context: ./
+      dockerfile: docker_files/ecu_u.docker
+    expose:
+      - "5002"
+    volumes:
+      - ".:/tmp"
+
+networks:
+  update-reporting-spi-nw:
+    name: update-reporting-spi-nw
+    ipam:
+      driver: default
+      config:
+        - subnet: "10.0.0.0/24"
+  update-reporting-eth-nw:
+    name: update-reporting-eth-nw
+    ipam:
+      driver: default
+      config:
+        - subnet: "20.0.0.0/24"

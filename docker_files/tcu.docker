@@ -1,0 +1,70 @@
+# Docker file for TCU
+FROM ubuntu:focal
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt update && \
+    apt install -y \
+	autoconf-archive \
+	libcmocka0 \
+	libcmocka-dev \
+	procps \
+	iproute2 \
+	build-essential \
+	git \
+	pkg-config \
+	gcc \
+	libtool \
+	automake \
+	libssl-dev \
+	uthash-dev \
+	autoconf \
+	doxygen \
+	libjson-c-dev \
+	libini-config-dev \
+	libcurl4-openssl-dev \
+	uuid-dev \
+	libltdl-dev \
+	libusb-1.0-0-dev \
+	libftdi-dev \
+	ncat \
+	xxd \
+	expect
+
+# For debug
+RUN apt update && \
+    apt install -y \
+    iputils-ping \
+    vim \
+    strace \
+    cgdb \
+    libtool-bin
+
+# Build TSS
+RUN git -C /tmp clone --depth=1 --branch 4.0.1 https://github.com/tpm2-software/tpm2-tss.git \
+    && cd /tmp/tpm2-tss \
+    && ./bootstrap \
+    && ./configure \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig
+
+# Build Tools
+RUN git -C /tmp clone --depth=1 --branch 5.5 https://github.com/tpm2-software/tpm2-tools.git \
+    && cd /tmp/tpm2-tools \
+    && ./bootstrap \
+    && ./configure \
+    && make -j$(nproc) \
+    && make install
+
+# Link code inside container
+ADD ../src/ /tmp/src
+
+RUN cd /tmp/src/ \
+	&& mkdir -p keys \
+	&& mkdir -p data
+
+ENV TSS2_FAPICONF=/tmp/src/fapi-config/fapi-config.json
+
+ENTRYPOINT ["tail", "-f", "/dev/null"]

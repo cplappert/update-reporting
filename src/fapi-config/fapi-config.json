@@ -1,0 +1,12 @@
+{
+     "profile_name": "P_ECCP256SHA256",
+     "profile_dir": "/tmp/src/fapi-config/",
+     "user_dir": "~/.local/share/tpm2-tss/user/keystore",
+     "system_dir": "/usr/local/var/lib/tpm2-tss/system/keystore",
+     "tcti": "swtpm:host=10.0.0.20,port=2321",
+     "system_pcrs" : [],
+     "log_dir" : "/usr/local/var/run/tpm2-tss/eventlog/",
+     "firmware_log_file": "/sys/kernel/security/tpm0/binary_bios_measurements",
+     "ima_log_file": "/sys/kernel/security/ima/binary_runtime_measurements",
+     "ek_cert_less": "yes"
+}

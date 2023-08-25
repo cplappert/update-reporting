@@ -1,0 +1,28 @@
+# Docker file for TCU
+FROM ubuntu:jammy
+
+# Install dependencies
+RUN apt update && \
+    apt install -y \
+	build-essential \
+	gcc \
+	libssl-dev \
+	ncat \
+	xxd \
+	openssl
+
+# For debug
+RUN apt update && \
+    apt install -y \
+    iproute2 \
+    iputils-ping \
+    vim
+
+# Link code inside container
+ADD ../src/ /tmp/src
+
+RUN cd /tmp/src/ \
+	&& mkdir -p keys \
+	&& mkdir -p data
+
+ENTRYPOINT ["tail", "-f", "/dev/null"]
