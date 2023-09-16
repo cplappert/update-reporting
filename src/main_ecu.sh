@@ -16,9 +16,14 @@ OUT_DATA=data
 
 function ecu_provision {
     key=$2
+    pubkey=$3
     mkdir -p ECU_KEYSTORE
     mkdir -p ECU_DATASTORE
     cat $key > ECU_KEYSTORE/key 
+    if [ ! -z "$3" ]
+    then
+        cat $pubkey > ECU_KEYSTORE/pubkey
+    fi
 }
 
 function ecu_answerchallenge {
@@ -48,14 +53,14 @@ function ecu_answerchallenge {
         if [[ `cat ECU_KEYSTORE/key` == *"RSA"* ]]; then
             echo "RSA"
 
-            { echo -n "`cat ECU_DATASTORE/tpm.nonce | xxd -p -c36 | head -c 64`"; echo -n "0000"; echo -n "00"; echo -n "00"; } | xxd -p -r | sha256sum | head -c 64 > ECU_DATASTORE/ahash.file
+            # { echo -n "`cat ECU_DATASTORE/tpm.nonce | xxd -p -c36 | head -c 64`"; echo -n "0000"; echo -n "00"; echo -n "00"; } | xxd -p -r | sha256sum | head -c 64 > ECU_DATASTORE/ahash.file
 
-            echo "ECU_DATASTORE/ahash.file: "
-            cat ECU_DATASTORE/ahash.file 
-            echo ""
+            # echo "ECU_DATASTORE/ahash.file: "
+            # cat ECU_DATASTORE/ahash.file 
+            # echo ""
 
-            xxd -p -r ECU_DATASTORE/ahash.file > ECU_DATASTORE/ahash.bin
-            echo ""
+            # xxd -p -r ECU_DATASTORE/ahash.file > ECU_DATASTORE/ahash.bin
+            # echo ""
 
             # openssl pkeyutl -sign -in ECU_DATASTORE/ahash.bin -inkey ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu \
             #     -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss -pkeyopt rsa_pss_saltlen:-1
@@ -63,8 +68,9 @@ function ecu_answerchallenge {
             # openssl pkeyutl -sign -in ECU_DATASTORE/ahash.bin -inkey ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu \
             #     -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss -pkeyopt rsa_pss_saltlen:-2
 
-            xxd -p -r ECU_DATASTORE/ahash.file | openssl pkeyutl -sign -inkey ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu \
-                -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss #-pkeyopt rsa_pss_saltlen:auto
+            # xxd -p -r ECU_DATASTORE/ahash.file | openssl pkeyutl -sign -inkey ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu \
+            #     -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss #-pkeyopt rsa_pss_saltlen:auto
+            cat ECU_DATASTORE/tpm.nonce | xxd -p -c36 | head -c 64 | xxd -p -r | openssl pkeyutl -sign -inkey ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
 
             # openssl dgst -sha256 -sign ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu ECU_DATASTORE/ahash.file
 
@@ -133,7 +139,8 @@ function ecu_sendnonce {
 
     startOverall=`date +%s%N`
 
-    head -c 32 /dev/urandom | xxd -p -c32 | ncat $TPM_IP $TPM_PORT
+    head -c 32 /dev/urandom > ecu.nonce
+    cat ecu.nonce | xxd -p -c32 | ncat $TPM_IP $TPM_PORT
 
     startSend=`date +%s%N`
 
@@ -142,15 +149,23 @@ function ecu_sendnonce {
     endSend=`date +%s%N`
 
     if [[ $alg == rsa ]]; then
-        xxd -p -r ECU_DATASTORE/tpm.sig | openssl pkeyutl -sign -inkey ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu \
-                    -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss #-pkeyopt rsa_pss_saltlen:auto
+	   openssl pkeyutl -verify -pubin -inkey ECU_KEYSTORE/pubkey -in ecu.nonce -sigfile ECU_DATASTORE/tpm.sig -pkeyopt rsa_padding_mode:pss -pkeyopt digest:sha256
     fi
     if [[ $alg == ecc ]]; then
-        xxd -p -r ECU_DATASTORE/tpm.sig | openssl dgst -sha256 -sign ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu
+        # xxd -p -r ECU_DATASTORE/tpm.sig | openssl dgst -sha256 -sign ECU_KEYSTORE/key -out ECU_DATASTORE/sig.ecu
+        openssl pkeyutl -verify -pubin -inkey ECU_KEYSTORE/pubkey -in ecu.nonce -sigfile ECU_DATASTORE/tpm.sig -pkeyopt digest:sha256
     fi
     if [[ $alg == hmac ]]; then
-        echo $myhexkey
-        cat ECU_DATASTORE/ahash.file | xxd -p -r | openssl dgst -sha256 -mac hmac -macopt hexkey:$myhexkey | sed "s/(stdin)= //" | tr -d \\n | xxd -r -p > ECU_DATASTORE/sig.ecu
+        # echo $myhexkey
+        cat ecu.nonce | xxd -p -c32 | openssl dgst -sha256 -mac hmac -macopt hexkey:$myhexkey | tr -d \\n | tail -c 64 | xxd -r -p > ECU_DATASTORE/sig.ecu
+
+        diff ECU_DATASTORE/tpm.sig ECU_DATASTORE/sig.ecu > /dev/null
+        if [[ $? -eq 0 ]] ;then
+            echo "MAC Verified Successfully!"
+        else
+            echo "MAC Verification Failure!"
+        fi
+
     fi
 
     endOverall=`date +%s%N`

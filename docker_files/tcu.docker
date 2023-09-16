@@ -30,7 +30,8 @@ RUN apt update && \
 	libftdi-dev \
 	ncat \
 	xxd \
-	expect
+	expect \
+	jq
 
 # For debug
 RUN apt update && \

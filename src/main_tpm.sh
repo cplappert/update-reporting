@@ -152,7 +152,11 @@ EOF
 
     echo -e "$POLICY_KSP" | tss2_import --path $PATH_POL_TMP --importData -
 
-    tss2 createkey --path $path_key_attest --policyPath $PATH_POL_TMP --type="sign, noda" --authValue ""
+    # tss2 createkey --path $path_key_attest --policyPath $PATH_POL_TMP --type="sign, noda" --authValue ""
+    tss2 createkey --path $path_key_attest --type="sign, noda" --authValue ""
+
+    tss2 exportkey --pathOfKeyToDuplicate=$path_key_attest --exportedData=exportedData.file
+    cat exportedData.file | jq '.pem_ext_public' --raw-output > keys/tpm_pub.pem
 
     cat $path_input_seal | tr -d \\n | tss2 createseal --path $path_key_seal --type="noDa" --authValue="" --data -
 
@@ -404,43 +408,6 @@ function tpm_answerchallenge {
     alg=$5
     input=$6
 
-
-
-    tss2 delete --path $key_path
-
-POLICY_KSP=$(cat <<EOF 
-{
-    "description":"Key Sealing Policy",
-    "policy":[
-        {
-          "type": "NV",
-          "nvPath": "`printf "$path_nv_report"`",
-          "operandB": "`printf "$bitmap"`",
-          "operation": "eq"
-        },
-    ]
-}
-EOF
-)
-    tss2 delete --path $path_nv_report
-
-    cat data/read_authorized.policy | tss2 import --path $PATH_POL_READ --importData -
-
-    tss2 createnv --path $path_nv_report --type "bitfield" --size 64 --policyPath $PATH_POL_READ --authValue ""
-
-    tss2 nvsetbits --nvPath $path_nv_report --bitmap $bitmap
-
-    echo -e "$POLICY_KSP"
-
-
-    echo -e "$POLICY_KSP" | tss2 import --path $PATH_POL_TMP --importData -
-
-    if [[ $alg != hmac ]]; then
-        tss2 createkey --path $key_path --type="sign, noda" --policyPath $PATH_POL_TMP --authValue ""
-    else
-        echo -n $input | tr -d \\n | tss2 createseal --path $key_path --type="noDa" --authValue="" --data -
-    fi
-
     ncat -l $TPM_PORT | xxd -p -r > data/ecu.nonce
 
     startOverall=`date +%s%N` 
@@ -454,11 +421,11 @@ EOF
         tss2 sign --keyPath $key_path --digest data/ecu.nonce --signature=signature.file -f
     fi
     if [[ $alg == hmac ]]; then
-        myhexkey=$(tss2_unseal --path $key_path --data=- | xxd -p)
+        myhexkey=$(tss2_unseal --path $key_path --data=- | xxd -p | xxd -p -r)
         echo myhexkey
         echo $myhexkey
 
-        cat data/ecu.nonce | xxd -p -r | openssl dgst -sha256 -mac hmac -macopt hexkey:$myhexkey  | sed "s/(stdin)= //" | tr -d \\n | xxd -r -p > signature.file
+        cat data/ecu.nonce | xxd -p -c32 | openssl dgst -sha256 -mac hmac -macopt hexkey:$myhexkey  | sed "s/(stdin)= //" | tr -d \\n | xxd -r -p > signature.file
     fi
 
     size=$(cat signature.file | wc -c)
@@ -469,10 +436,7 @@ EOF
 
     echo Overall Execution time was `expr $endOverall - $startOverall` nanoseconds.
 
-    tss2 delete --path $PATH_POL_TMP
-    tss2 delete --path $PATH_POL_READ
 }
-
 
 function authorizePolicy {
     to_be_signed=$1
@@ -557,164 +521,3 @@ if [ $# -ne 0 ]; then
 else
     true
 fi
-
-
-# tpm2_startup -Tswtpm -c
-
-# if [ "$PROVISION" = "True" ]; then
-
-#     ####################### Create NV ##################################
-
-#     # tss2 createnv --path $PATH_REVOCATION --type=counter --authValue ""
-#     # tss2 nvincrement --nvPath $PATH_REVOCATION
-#     # abc=$(tss2_nvread --nvPath $PATH_REVOCATION --data - | xxd)
-#     # echo REVOCATION COUNTER
-#     # echo $abc
-
-
-#     ####################### Create IAP ##################################
-
-# POLICY_AUTHORIZE=$(cat <<EOF
-# {
-#     "description":"Initial Authorization Policy",
-#     "policy":[
-#         {
-#             "type": "POLICYAUTHORIZE",
-#             "policyRef": [ 1, 2, 3, 4, 5 ],
-#             "keyPEM": "`cat $OUT_KEYS/backend_pub.pem`",
-#         }
-#     ]
-# }
-# EOF
-# )
-
-#     echo -e "$POLICY_AUTHORIZE" | tss2_import --path $PATH_POL_AUTHORIZE --importData -
-
-#     tss2 createnv --path $PATH_BITMASK --type "bitfield" --size 64 --policyPath $PATH_POL_AUTHORIZE --authValue ""
-
-#     handle=$(getFapiHandle $KEY_STORE_PATH$PATH_BITMASK/object.json)
-
-#     # echo HANDLE
-#     # echo $handle
-
-#     tpm2_nvsetbits -T $TCTI $handle -i $BITMAP --cphash $CP_HASH_FILE 
-
-
-#     CPHASH=$(cat $CP_HASH_FILE | xxd -p -c 32 -s 2)
-#     rm $CP_HASH_FILE
-
-#     # tss2 delete --path $PATH_BITMASK
-
-
-#     ####################### Create EAP ##################################
-
-
-#     POLICY=$(createEAPPolicy "$CPHASH" "`cat $OUT_KEYS/backend_pub.pem`" "$PATH_REVOCATION")
-#     # POLICY=$(createTestPolicy "$CPHASH" "`cat $OUT_KEYS/backend_pub.pem`" "$PATH_REVOCATION")
-
-#     echo POLICY
-#     echo -e "$POLICY"
-
-#     ####################### Authorize Policy ##################################
-
-#     AUTHORIZED_POLICY=$(authorizePolicy "$POLICY" "`cat $OUT_KEYS/backend_pub.pem`")
-
-#     echo AUTHORIZED_POLICY
-#     echo -e "$AUTHORIZED_POLICY" > $PATH_POLICY_JSON
-
-
-#     ####################### TEST Reporting Key ##################################
-#     ####################### Create Reporting Key ##################################
-
-#     POLICY=$(createKSPPolicy "$PATH_BITMASK" "0")
-
-#     echo -e $POLICY | tss2 import --path $PATH_POL_KSP --importData -
-
-#     tss2_createkey --path=$PATH_REPORT_KEY --type="noDa, sign" --authValue="" #--policyPath=$PATH_POL_KSP
-
-#     touch signature.file
-
-    # echo "INTERRUPT"
-    # exit 0
-
-    # netcat -ul -w 0 -p5500 > out.file
-
-#     startTPM=`date +%s%N`
-    
-#     echo -n "abdefghijklmnopqabdefghijklmnopq" | tss2_sign --keyPath=$PATH_REPORT_KEY --digest=- --signature=signature.file -f
-
-#     endTPM=`date +%s%N`
-
-#     `cat $SIGNATURE_FILE | nc -u -w0 192.168.178.37 3500`
-
-#     rm signature.file
-
-
-#     echo TPM Execution time was `expr $endTPM - $startTPM` nanoseconds.
-
-#     ###################### /TEST Reporting Key ##################################
-
-#     exit 0
-
-
-# fi
-
-
-####################### Load Policy and Access Key ##################################
-
-
-# startOverall=`date +%s%N`
-
-# cat $PATH_POLICY_JSON | tss2 import --path $PATH_POL_AUTHORIZED --importData -
-# #echo -e "$AUTHORIZED_POLICY" | tss2 import --path $PATH_POL_AUTHORIZED --importData -
-
-
-# # tss2_nvsetbits --nvPath $PATH_BITMASK --bitmap=$BITMAP
-
-# START_FILE=start.file
-# END_FILE=end.file
-
-# expect <<EOF
-#     spawn sh -c "tss2_nvsetbits --nvPath $PATH_BITMASK --bitmap=$BITMAP 2> $LOG_FILE"
-#     expect "Filename for nonce output: " {
-#         send "$OUTPUT_FILE\r"
-#         puts [open "$START_FILE" w] $expect_out `date +%s%N`
-#         expect "Filename for signature input: " {
-#             `cat $OUTPUT_FILE | nc -u -w0 192.168.178.37 3500`
-#             `netcat -ul -w 0 -p5500 > $SIGNATURE_FILE`
-#             puts [open $END_FILE w] $expect_out `date +%s%N`
-#             send "$SIGNATURE_FILE\r"
-#             exp_continue
-#         }
-#     }
-# EOF
-
-# endOverall=`date +%s%N`
-
-# startTrans=`cat $START_FILE`
-# endTrans=`cat $END_FILE`
-
-
-
-# echo Transmission time was `expr $endTrans - $startTrans` nanoseconds.
-# echo Overall Execution time was `expr $endOverall - $startOverall` nanoseconds.
-
-
-# expect <<EOF
-#     spawn sh -c "tss2_nvsetbits --nvPath $PATH_BITMASK --bitmap=$BITMAP 2> $LOG_FILE"
-#     expect "Filename for nonce output: " {
-#         send "$OUTPUT_FILE\r"
-#         expect "Filename for signature input: " {
-#             exec openssl dgst -sha256 -sign $OUT_KEYS/backend_priv.pem -out $SIGNATURE_FILE $OUTPUT_FILE
-#             send "$SIGNATURE_FILE\r"
-#             exp_continue
-#         }
-#     }
-# EOF
-
-
-# if grep "ERROR" $LOG_FILE > /dev/null
-# then
-#   cat $LOG_FILE
-#   exit 1
-# fi

@@ -33,15 +33,14 @@ end
 
 ## General Container Setup and Management
 
-To get the project working, [Docker Compose]
-(https://docs.docker.com/compose/) needs to be installed. The docker compose
-file defines all networking between the containers. These commands are the most
-important:
+To get the project working, [Docker Compose](https://docs.docker.com/compose/)
+needs to be installed. The docker compose file defines all networking between
+the containers. These commands are the most important:
 
 ```
-1. docker compose -f docker-compose.yml build // build all the container images
-2. docker compose -f docker-compose.yml up -d // start all containers and detach
-3. docker compose -f docker-compose.yml down // stop and reset all containers
+1. docker compose -f docker-compose.yml build # build all the container images
+2. docker compose -f docker-compose.yml up -d # start all containers and detach
+3. docker compose -f docker-compose.yml down  # stop and reset all containers
 ```
 
 ## TPM HW and Software Simulator
@@ -86,9 +85,31 @@ TPM. Copy the private or symmetric key.
 
 ```
 - Choose a variant
-	a) bash main_tpm.sh createbackendkeys keys rsa "1234567890"	# RSA (+HMAC)
-	b) bash main_tpm.sh createbackendkeys keys ecc "1234567890"	# ECC (+HMAC)
-	c) Copy from keys/ecu_priv.pem (RSA/ECC) or key/symkey		# cat keys/ecu_priv.pem or keys/symkey
+a) RSA (+HMAC)
+  - bash main_tpm.sh createbackendkeys keys rsa "1234567890"
+b) ECC (+HMAC)
+  - bash main_tpm.sh createbackendkeys keys ecc "1234567890"
+```
+
+Provision the TPM by initializing the key hierarchy, creating the initial
+authorization policy bound to the backend key, creating the attestation key
+bound to the Key Sealing Policy (KSP), the HMAC key, revocation counter, and
+the reporting bit field.
+
+```
+1. tss2 provision (warnings about not existing directories are ok, they will be created here)
+2. bash main_tpm.sh provision keys/backend_pub.pem HS/SRK/attestkey HS/SRK/symkey keys/symkey /nv/Owner/rev_ctr /nv/Owner/nv_report 1
+3. bash main_tpm.sh createreadpolicy keys/backend_pub.pem data
+```
+
+Copy keys and paste them into new terminal (cf. next step)
+
+```
+a) Asymmetric (RSA/ECC)
+  - cat keys/ecu_priv.pem (copy -> paste; according to next step 2a)
+  - cat keys/tpm_pub.pem (copy -> paste; according to next step 2a)
+b) Symmetric (HMAC)
+  - cat keys/symkey
 ```
 
 #### Session2 (no TPM): Terminal Window 2 / Computer 2
@@ -98,32 +119,19 @@ into the keys folder. Afterwards, provision the ECU with the copied key.
 
 ```
 1. docker exec -w /tmp/src -it update-reporting-ecuu /bin/bash
-2. Paste copied key (create necessary folders and files in /tmp/src)
-	a) Copy into keys/ecu_priv.pem # Asymmetric
-	b) Copy into keys/sym.key # Symmetric
-3. Provision alternatives
-	a) bash main_ecu.sh provision keys/ecu_priv.pem # Asymmetric
-	b) bash main_ecu.sh provision keys/sym.key # Symmetric
+2. mkdir -p keys && touch keys/ecu_priv.pem keys/tpm_pub.pem keys/sym.key
+3. Paste copied key (create necessary folders and files in /tmp/src)
+  a) Asymmetric
+    - vi keys/ecu_priv.pem (Paste ecu_priv.pem)
+    - vi keys/tpm_pub.pem (Paste tpm_pub.pem)
+  b) Symmetric 
+    - vi keys/sym.key (Paste sym.key)
+4. Provision alternatives
+  a) Asymmetric
+    - bash main_ecu.sh provision keys/ecu_priv.pem keys/tpm_pub.pem
+  b) Symmetric
+    - bash main_ecu.sh provision keys/sym.key
 ```
-
-#### Session1 (with TPM): Terminal Window 1 / Computer 1: Provision TPM according to the selected command in previous step
-
-Provision the TPM by initializing the key hierarchy, creating the initial
-authorization policy bound to the backend key, creating the attestation key
-bound to the Key Sealing Policy (KSP), the HMAC key, revocation counter, and
-the reporting bit field.
-
-```
-1. tss2 provision
-2. bash main_tpm.sh provision keys/backend_pub.pem HS/SRK/attestkey HS/SRK/symkey keys/symkey /nv/Owner/rev_ctr /nv/Owner/nv_report 1
-```
-
-#### [Optional] Session1 (with TPM): Terminal Window 1 / Computer 1: Create a read policy for later easier handling of report index
-
-```
-1. bash main_tpm.sh createreadpolicy keys/backend_pub.pem data
-```
-
 
 #### Session1 (with TPM): Terminal Window 1 / Computer 1
 
@@ -133,8 +141,10 @@ asymmetric/symmetric PolicySigned.
 
 ```
 - Choose either asymmetric or symmetric depending on what you have chosen before (for asymmetric the correct key for ECC or RSA will automatically be chosen)
-a) bash main_tpm.sh createeappolicy keys/backend_pub.pem keys/ecu_pub.pem /nv/Owner/rev_ctr /nv/Owner/nv_report 1 data	# Assymmetric 
-b) bash main_tpm.sh createeappolicy keys/backend_pub.pem HS/SRK/symkey /nv/Owner/rev_ctr /nv/Owner/nv_report 1 data	# Symmetric
+a) Asymmetric
+  - bash main_tpm.sh createeappolicy keys/backend_pub.pem keys/ecu_pub.pem /nv/Owner/rev_ctr /nv/Owner/nv_report 1 data
+b) Symmetric
+  - bash main_tpm.sh createeappolicy keys/backend_pub.pem HS/SRK/symkey /nv/Owner/rev_ctr /nv/Owner/nv_report 1 data
 ```
 
 _Hint: For consecutive execution the bitmap (1) needs to be changed, e.g., 2,3,4,5,6,7 ..._
@@ -165,11 +175,13 @@ command.
 
 ```
 - Choose either asymmetric or symmetric depending on what you have chosen before (for asymmetric the correct key for ECC or RSA will automatically be chosen)
-	a) bash main_tpm.sh authorizewrite data/eap_authorized.policy /nv/Owner/nv_report keys/ecu_priv.pem 1 	# Asymmetric
-	b) bash main_tpm.sh authorizewrite data/eap_authorized.policy /nv/Owner/nv_report keys/symkey 1 	# Symmetric
+a) Asymmetric
+  - bash main_tpm.sh authorizewrite data/eap_authorized.policy /nv/Owner/nv_report keys/ecu_priv.pem 1
+b) Symmetric
+  - bash main_tpm.sh authorizewrite data/eap_authorized.policy /nv/Owner/nv_report keys/symkey 1
 ```
 
-Both session will report execution and tranmission times.
+Both session will report execution and transmission times.
 
 ### Unlock Attestation Key (2. Authorized State Transition)
 
@@ -184,9 +196,12 @@ Start TCU (with attached TPM) in listening mode to wait for incoming challenge f
 
 ```
 - Choose the correct variant
-	a) bash main_tpm.sh answerchallenge HS/SRK/attestkey /nv/Owner/nv_report 1 rsa			# RSA
-	b) bash main_tpm.sh answerchallenge HS/SRK/attestkey /nv/Owner/nv_report 1 ecc			# ECC
-	c) bash main_tpm.sh answerchallenge HS/SRK/attestkey /nv/Owner/nv_report 1 hmac "1234567890"	# HMAC
+a) RSA
+  - bash main_tpm.sh answerchallenge HS/SRK/attestkey /nv/Owner/nv_report 1 rsa
+b) ECC
+  - bash main_tpm.sh answerchallenge HS/SRK/attestkey /nv/Owner/nv_report 1 ecc
+c) HMAC
+  - bash main_tpm.sh answerchallenge HS/SRK/symkey /nv/Owner/nv_report 1 hmac "1234567890"
 ```
 
 #### Session2 (no TPM): Terminal Window 2 / Computer 2 (udp client)
@@ -195,7 +210,10 @@ On the ECU, create a nonce and send it to the TCU. The TCU will forward the nonc
 
 ```
 - Choose the correct variant
-	a) bash main_ecu.sh sendnonce rsa			# RSA
-	b) bash main_ecu.sh sendnonce ecc			# ECC
-	c) bash main_ecu.sh sendnonce hmac "1234567890"		# HMAC
+a) RSA
+  - bash main_ecu.sh sendnonce rsa
+b) ECC
+  - bash main_ecu.sh sendnonce ecc
+c) HMAC
+  - bash main_ecu.sh sendnonce hmac "1234567890"
 ```
